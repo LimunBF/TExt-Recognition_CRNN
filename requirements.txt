@@ -1,0 +1,9 @@
+torch>=2.0.0
+torchvision
+numpy
+opencv-python
+matplotlib
+Pillow
+tqdm
+pyyaml
+pywin32  # Untuk OpenCV kamera di Windows (opsional)

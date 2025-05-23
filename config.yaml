@@ -1,0 +1,24 @@
+# Konfigurasi umum
+seed: 42
+device: "cuda"  # atau "cpu"
+
+# Dataset
+dataset:
+  train_labels: "./dataset/train_labels.txt"
+  val_labels: "./dataset/val_labels.txt"
+  img_height: 32
+  img_width: 128
+  charset: "abcdefghijklmnopqrstuvwxyz0123456789.,:!?/()- "
+
+# Training
+training:
+  epochs: 30
+  batch_size: 16
+  learning_rate: 0.001
+  num_workers: 0
+  model_save_path: "./models/crnn_model.pt"
+
+# Inference
+inference:
+  image_folder: "./test_images"
+  result_path: "./outputs/result.txt"
