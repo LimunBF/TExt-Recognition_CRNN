@@ -8,14 +8,14 @@ dataset:
   val_labels: "./dataset/val_labels.txt"
   img_height: 32
   img_width: 128
-  charset: "abcdefghijklmnopqrstuvwxyz0123456789.,:!?/()- "
+  charset: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,:!?/()- "
 
 # Training
 training:
   epochs: 30
   batch_size: 16
   learning_rate: 0.001
-  num_workers: 0
+  num_workers: 4
   model_save_path: "./models/crnn_model.pt"
 
 # Inference
