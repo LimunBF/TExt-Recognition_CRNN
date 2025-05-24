@@ -8,6 +8,7 @@ from utils.dataset import OCRDataset
 from utils.label_encoder import LabelEncoder
 from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
+from Levenshtein import distance # Import Levenshtein for CER calculation
 
 # Collate untuk handle sequence label dengan panjang berbeda
 def collate_fn(batch):
@@ -33,53 +34,69 @@ train_set = OCRDataset(config["dataset"]["train_labels"], img_h, img_w, label_en
 val_set = OCRDataset(config["dataset"]["val_labels"], img_h, img_w, label_encoder)
 
 train_loader = DataLoader(train_set, batch_size=config["training"]["batch_size"],
-    shuffle=True, num_workers=config["training"]["num_workers"], # num_workers can be > 0 if your system supports it
+    shuffle=True, num_workers=config["training"]["num_workers"],
     collate_fn=collate_fn)
 
 val_loader = DataLoader(val_set, batch_size=1, shuffle=False,
-                        num_workers=0, collate_fn=collate_fn) # num_workers 0 is fine for validation
+                        num_workers=0, collate_fn=collate_fn)
 
 # Model
 model = CRNN(img_h, 1, num_classes).to(device)
 criterion = nn.CTCLoss(blank=0, zero_infinity=True)
 optimizer = optim.Adam(model.parameters(), lr=config["training"]["learning_rate"])
 
-# --- NEW: Learning Rate Scheduler ---
-# Reduces learning rate when validation loss stops improving
+# Learning Rate Scheduler
 scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
-# --- NEW: Early Stopping Variables ---
+# Early Stopping Variables - now using values from config
 best_val_loss = float('inf')
 epochs_no_improve = 0
-patience = 10 # Number of epochs to wait for validation loss improvement before early stopping
-min_delta = 0.001 # Minimum change to be considered an improvement
+patience = config["training"]["early_stopping_patience"] # Mengambil dari config
+min_delta = config["training"]["early_stopping_min_delta"] # Mengambil dari config
 
-# --- NEW: Validation Function ---
-def validate(model, val_loader, criterion, device):
-    model.eval() # Set model to evaluation mode
+# Validation Function - now also calculates CER
+def validate(model, val_loader, criterion, device, label_encoder): # Added label_encoder as argument
+    model.eval()
     total_loss = 0
-    with torch.no_grad(): # Disable gradient calculations
-        for images, targets, target_lengths in val_loader:
+    total_cer_distance = 0
+    total_chars = 0
+    with torch.no_grad():
+        for images, targets_encoded, target_lengths in val_loader:
             images = images.to(device)
-            targets = targets.to(device)
+            targets_encoded = targets_encoded.to(device)
             target_lengths = target_lengths.to(device)
 
             outputs = model(images)
             outputs = outputs.permute(1, 0, 2) # CTC: [T, B, C]
             input_lengths = torch.full((outputs.size(1),), outputs.size(0), dtype=torch.long)
 
-            loss = criterion(outputs, targets, input_lengths, target_lengths)
+            loss = criterion(outputs, targets_encoded, input_lengths, target_lengths)
             total_loss += loss.item()
 
+            # Calculate CER
+            probs = torch.softmax(outputs, dim=2)
+            preds_indices = torch.argmax(probs, dim=2)
+
+            # Iterasi per item di dalam batch (penting karena batch_size=1 untuk val_loader)
+            for i in range(preds_indices.size(1)):
+                # Decode prediksi
+                pred_text = label_encoder.decode(preds_indices[:, i].cpu().numpy())
+                # Decode ground truth
+                true_text = "".join([label_encoder.idx2char.get(idx.item(), "") for idx in targets_encoded[i, :target_lengths[i]]])
+
+                total_cer_distance += distance(pred_text, true_text)
+                total_chars += len(true_text)
+
     avg_loss = total_loss / len(val_loader)
-    return avg_loss
+    avg_cer = total_cer_distance / total_chars if total_chars > 0 else 0
+    return avg_loss, avg_cer # Return CER as well
 
 def train():
-    global best_val_loss, epochs_no_improve # Declare global to modify outside function scope
+    global best_val_loss, epochs_no_improve
 
     for epoch in range(config["training"]["epochs"]):
         # --- Training Loop ---
-        model.train() # Set model to training mode
+        model.train()
         epoch_loss = 0
         pbar = tqdm(train_loader, desc=f"Epoch {epoch + 1} (Train)")
         for images, targets, target_lengths in pbar:
@@ -88,15 +105,14 @@ def train():
             target_lengths = target_lengths.to(device)
 
             optimizer.zero_grad()
-            outputs = model(images)  # [B, T, C]
-            outputs = outputs.permute(1, 0, 2)  # CTC: [T, B, C]
+            outputs = model(images)
+            outputs = outputs.permute(1, 0, 2) # CTC: [T, B, C]
             input_lengths = torch.full((outputs.size(1),), outputs.size(0), dtype=torch.long)
 
             loss = criterion(outputs, targets, input_lengths, target_lengths)
             loss.backward()
 
-            # --- NEW: Gradient Clipping ---
-            # Prevents exploding gradients, common in RNNs
+            # Gradient Clipping
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
 
             optimizer.step()
@@ -108,14 +124,14 @@ def train():
         print(f"Epoch {epoch+1} Train Loss: {current_train_loss:.4f}")
 
         # --- Validation Loop ---
-        val_loss = validate(model, val_loader, criterion, device)
-        print(f"Epoch {epoch+1} Val Loss: {val_loss:.4f}")
+        val_loss, val_cer = validate(model, val_loader, criterion, device, label_encoder) # Get CER from validate
+        print(f"Epoch {epoch+1} Val Loss: {val_loss:.4f}, Val CER: {val_cer:.4f}")
 
-        # --- NEW: Step the Learning Rate Scheduler ---
+        # Step the Learning Rate Scheduler
         scheduler.step(val_loss)
 
-        # --- NEW: Early Stopping Logic ---
-        if val_loss + min_delta < best_val_loss: # Check if validation loss has improved significantly
+        # Early Stopping Logic
+        if val_loss + min_delta < best_val_loss:
             best_val_loss = val_loss
             epochs_no_improve = 0
             # Save the best model, not just the last one
@@ -126,7 +142,7 @@ def train():
             print(f"Validation loss did not improve for {epochs_no_improve} epochs.")
             if epochs_no_improve >= patience:
                 print(f"Early stopping triggered after {patience} epochs without significant improvement.")
-                break # Exit the training loop
+                break
 
 if __name__ == "__main__":
     train()
