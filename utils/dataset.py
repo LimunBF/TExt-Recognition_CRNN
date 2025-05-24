@@ -29,5 +29,6 @@ class OCRDataset(Dataset):
         image_path, label = self.data[idx]
         image = Image.open(image_path).convert("RGB")
         image = self.transform(image)
-        label_encoded = self.label_encoder.encode(label.lower())
+        # Re-added .lower() to ensure all labels are processed as lowercase
+        label_encoded = self.label_encoder.encode(label.lower()) #
         return image, torch.tensor(label_encoded, dtype=torch.long), len(label_encoded)
