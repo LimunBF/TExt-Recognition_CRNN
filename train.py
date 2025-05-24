@@ -46,7 +46,7 @@ optimizer = optim.Adam(model.parameters(), lr=config["training"]["learning_rate"
 
 # --- NEW: Learning Rate Scheduler ---
 # Reduces learning rate when validation loss stops improving
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
 # --- NEW: Early Stopping Variables ---
 best_val_loss = float('inf')
