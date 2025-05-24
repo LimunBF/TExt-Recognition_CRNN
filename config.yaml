@@ -8,15 +8,17 @@ dataset:
   val_labels: "./dataset/val_labels.txt"
   img_height: 32
   img_width: 128
-  charset: "abcdefghijklmnopqrstuvwxyz0123456789.,:!?/()- "
+  charset: "0123456789abcdefghijklmnopqrstuvwxyz" # Pastikan ini mencakup semua karakter yang ada di dataset Anda
 
 # Training
 training:
-  epochs: 30
-  batch_size: 16
+  epochs: 50 # Diperbanyak untuk memberi kesempatan konvergensi lebih, meskipun ada early stopping
+  batch_size: 32 # Meningkatkan batch size, jika VRAM GPU memungkinkan
   learning_rate: 0.001
-  num_workers: 4
+  num_workers: 6 # Sesuaikan dengan jumlah core CPU Anda
   model_save_path: "./models/crnn_model.pt"
+  early_stopping_patience: 15 # Meningkatkan patience sedikit untuk early stopping
+  early_stopping_min_delta: 0.0005 # Sedikit mengurangi min_delta untuk sensitivitas yang lebih tinggi
 
 # Inference
 inference:
