@@ -6,19 +6,19 @@ class CRNN(nn.Module):
         super(CRNN, self).__init__()
 
         self.cnn = nn.Sequential(
-            nn.Conv2d(num_channels, 64, 3, 1, 1),
+            nn.Conv2d(num_channels, 64, 3, 1, 1),  # -> [B,64,H,W]
             nn.ReLU(),
-            nn.MaxPool2d(2, 2),  # 64x(H/2)x(W/2)
+            nn.MaxPool2d(2, 2),                   # -> [B,64,H/2,W/2]
 
             nn.Conv2d(64, 128, 3, 1, 1),
             nn.ReLU(),
-            nn.MaxPool2d(2, 2),  # 128x(H/4)x(W/4)
+            nn.MaxPool2d(2, 2),                   # -> [B,128,H/4,W/4]
 
             nn.Conv2d(128, 256, 3, 1, 1),
             nn.ReLU(),
             nn.Conv2d(256, 256, 3, 1, 1),
             nn.ReLU(),
-            nn.MaxPool2d((2, 1), (2, 1)),  # 256x(H/8)x(W/4)
+            nn.MaxPool2d((2, 1), (2, 1)),         # -> [B,256,H/8,W/4]
 
             nn.Conv2d(256, 512, 3, 1, 1),
             nn.BatchNorm2d(512),
@@ -27,30 +27,28 @@ class CRNN(nn.Module):
             nn.Conv2d(512, 512, 3, 1, 1),
             nn.BatchNorm2d(512),
             nn.ReLU(),
-            nn.MaxPool2d((2, 1), (2, 1)),  # 512x(H/16)x(W/4)
+            nn.MaxPool2d((2, 1), (2, 1)),         # -> [B,512,H/16,W/4]
 
-            nn.Conv2d(512, 512, 2, 1, 0),  # valid conv
-            nn.ReLU()
+            nn.Conv2d(512, 512, kernel_size=(2, 1), stride=(1, 1)),  # -> [B,512,H/16 - 1,W/4]
+            nn.ReLU(),
         )
 
-        # Use a single LSTM with num_layers=2
-        # Input size is 512 (from CNN output)
-        # Output size from this LSTM will be 2 * 256 = 512 (due to bidirectional)
-        self.rnn = nn.LSTM(512, 256, bidirectional=True, batch_first=True, num_layers=2)
+        self.rnn = nn.LSTM(
+            input_size=512,
+            hidden_size=256,
+            num_layers=2,
+            bidirectional=True,
+            batch_first=True
+        )
 
-        self.fc = nn.Linear(256 * 2, num_classes) # Output of final LSTM is 2*256 (bidirectional)
+        self.fc = nn.Linear(512, num_classes)
 
     def forward(self, x):
-        # CNN
-        conv = self.cnn(x)
+        conv = self.cnn(x)             # [B, C, H', W']
         b, c, h, w = conv.size()
-        assert h == 1, "the height of conv must be 1"
-        conv = conv.squeeze(2)  # [b, c, w]
-        conv = conv.permute(0, 2, 1)  # [b, w, c] = [batch, seq, features]
+        conv = conv.permute(0, 3, 1, 2)   # [B, W', C, H']
+        conv = conv.contiguous().view(b, w, c * h)  # [B, W', C*H']
 
-        # RNN
-        rnn_out, _ = self.rnn(conv) # rnn_out now contains the output from the final LSTM layer
-
-        # FC
-        output = self.fc(rnn_out)
-        return output  # [batch, seq_len, num_classes]
+        rnn_out, _ = self.rnn(conv)     # [B, T, 512]
+        output = self.fc(rnn_out)       # [B, T, num_classes]
+        return output
