@@ -3,6 +3,7 @@ from PIL import Image
 import torch
 from torch.utils.data import Dataset
 import torchvision.transforms as T
+from utils.transform import ResizeWithPadding  # tambahkan import ini
 
 class OCRDataset(Dataset):
     def __init__(self, label_path, img_height, img_width, label_encoder):
@@ -18,9 +19,9 @@ class OCRDataset(Dataset):
 
         # Transformasi dasar: resize + to tensor
         self.transform = T.Compose([
-            T.Grayscale(),
-            T.Resize((img_height, img_width)),
-            T.ToTensor()
+            ResizeWithPadding((img_height, img_width)),
+            T.ToTensor(),
+            T.Normalize((0.5,), (0.5,))
         ])
 
     def __len__(self):
