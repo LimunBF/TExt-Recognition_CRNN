@@ -1,18 +1,36 @@
-class LabelEncoder:
-    def __init__(self, alphabet):
-        # blank token = 0, then 1..len(alphabet)
-        self.char2idx = {char: idx + 1 for idx, char in enumerate(alphabet)}
-        self.idx2char = {idx + 1: char for idx, char in enumerate(alphabet)}
-        self.blank = 0
+import os
+from PIL import Image
+import torch
+from torch.utils.data import Dataset
+import torchvision.transforms as T
 
-    def encode(self, text):
-        return [self.char2idx[char] for char in text]
+class OCRDataset(Dataset):
+    def __init__(self, label_path, img_height, img_width, label_encoder):
+        self.img_height = img_height
+        self.img_width = img_width
+        self.label_encoder = label_encoder
+        self.data = []
 
-    def decode(self, indices):
-        chars = []
-        for i, idx in enumerate(indices):
-            # skip blanks & repeated tokens
-            if idx != self.blank and (i == 0 or idx != indices[i - 1]):
-                chars.append(self.idx2char.get(idx, ""))
-        return ''.join(chars)
-    
+        with open(label_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                image, label = line.strip().split('\t')
+                self.data.append((image, label))
+
+        # Transformasi dasar: resize + to tensor
+        self.transform = T.Compose([
+            T.Grayscale(),
+            T.Resize((img_height, img_width)),
+            T.ToTensor()
+        ])
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        image_path, label = self.data[idx]
+        image = Image.open(image_path).convert("RGB")
+        image = self.transform(image)
+
+        # Encode label menjadi deretan indeks (CTC expects ints)
+        label_encoded = self.label_encoder.encode(label.lower())
+        return image, torch.tensor(label_encoded, dtype=torch.long), len(label_encoded)
