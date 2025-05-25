@@ -20,15 +20,28 @@ def preprocess_image(image, img_h, img_w):
     ])
     return transform(image).unsqueeze(0)  # [1, 1, H, W]
 
+def ctc_decode(preds, blank=0):
+    """
+    Decode output from CTC-style argmax:
+    - Remove repeated characters and blank index
+    """
+    decoded = []
+    prev = blank
+    for p in preds:
+        if p != blank and p != prev:
+            decoded.append(p)
+        prev = p
+    return decoded
+
 def predict(model, image_tensor, label_encoder, device):
     model.eval()
     with torch.no_grad():
         image_tensor = image_tensor.to(device)
         output = model(image_tensor)  # [B, T, C]
         output = output.permute(1, 0, 2)  # [T, B, C]
-        probs = torch.argmax(output, dim=2)
-        probs = probs.squeeze(1).detach().cpu().numpy()
-        text = label_encoder.decode(probs)
+        preds = torch.argmax(output, dim=2).squeeze(1).cpu().numpy().tolist()
+        decoded = ctc_decode(preds, blank=0)
+        text = label_encoder.decode(decoded)
         return text
 
 def infer_on_folder(config, model, label_encoder, device):
@@ -66,7 +79,7 @@ def infer_from_camera(config, model, label_encoder, device):
         image_tensor = preprocess_image(pil_image, img_h, img_w)
         pred = predict(model, image_tensor, label_encoder, device)
 
-        # Tampilkan teks hasil OCR
+        # Tampilkan teks hasil OCR di frame
         cv2.putText(frame, pred, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         cv2.imshow("OCR Webcam", frame)
 
